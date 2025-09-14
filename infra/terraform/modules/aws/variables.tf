@@ -13,3 +13,20 @@ variable "vpc_security_group_ids" { type = list(string), default = [] }
 variable "iam_boundary_policy_arn" { type = string, default = null }
 variable "create_kms_key" { type = bool, default = false }
 variable "tags" { type = map(string), default = {} }
+
+# Zero Trust Network Variables
+variable "enable_zero_trust_networking" { type = bool, default = false }
+variable "enable_private_endpoints" { type = bool, default = false }
+variable "allowed_egress_destinations" { 
+  type = list(object({
+    description = string
+    port = number
+    cidrs = list(string)
+    protocol = string
+  }))
+  default = []
+}
+variable "vpc_id" { type = string, default = null }
+variable "private_subnet_ids" { type = list(string), default = [] }
+variable "splunk_hec_vpc_endpoint_service" { type = string, default = null }
+variable "enable_network_monitoring" { type = bool, default = false }
