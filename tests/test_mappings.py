@@ -1,3 +1,27 @@
+from src.common.mappings import map_aws_security_hub_finding, map_gcp_scc_finding
+
+
+def test_map_aws_basic():
+    f = {
+        "Id": "abc",
+        "Title": "t",
+        "Description": "d",
+        "AwsAccountId": "123456789012",
+        "Region": "us-east-1",
+        "Severity": {"Label": "HIGH"},
+        "Resources": [{"Id": "r1", "Type": "AwsEc2Instance"}],
+    }
+    m = map_aws_security_hub_finding(f)
+    assert m["provider"] == "aws"
+    assert m["finding_id"] == "abc"
+    assert m["severity"] == "HIGH"
+
+
+def test_map_gcp_basic():
+    msg = {"finding": {"name": "f1", "category": "c", "severity": "CRITICAL", "resourceName": "//compute"}}
+    m = map_gcp_scc_finding(msg)
+    assert m["provider"] == "gcp"
+    assert m["finding_id"] == "f1"
 from __future__ import annotations
 
 from src.common.mappings import map_aws_security_hub_finding, map_gcp_scc_finding

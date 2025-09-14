@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [ main ]
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install .[dev]
+      - name: Lint & Typecheck
+        run: |
+          ruff check .
+          mypy src
+      - name: Tests
+        run: pytest -q
+
+  terraform:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.8.5
+      - name: Terraform fmt
+        run: terraform fmt -check -recursive
+      - name: Validate AWS module
+        working-directory: infra/terraform/modules/aws
+        run: terraform init -backend=false && terraform validate
+      - name: Validate GCP module
+        working-directory: infra/terraform/modules/gcp
+        run: terraform init -backend=false && terraform validate

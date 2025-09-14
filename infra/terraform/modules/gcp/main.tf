@@ -3,11 +3,15 @@ terraform {
   required_providers {
     google = {
       source  = "hashicorp/google"
-      version = ">= 5.28"
+      version = ">= 5.30.0"
     }
     google-beta = {
       source  = "hashicorp/google-beta"
-      version = ">= 5.28"
+      version = ">= 5.30.0"
+    }
+    archive = {
+      source  = "hashicorp/archive"
+      version = ">= 2.5.0"
     }
   }
 }
@@ -22,61 +26,98 @@ provider "google-beta" {
   region  = var.region
 }
 
-resource "google_pubsub_topic" "scc_findings" {
+resource "google_project_service" "services" {
+  for_each = toset([
+    "securitycenter.googleapis.com",
+    "pubsub.googleapis.com",
+    "cloudfunctions.googleapis.com",
+    "run.googleapis.com",
+    "artifactregistry.googleapis.com",
+    "secretmanager.googleapis.com",
+  ])
+  project = var.project_id
+  service = each.key
+}
+
+resource "google_pubsub_topic" "scc" {
   name   = "${var.name_prefix}-mcspm-scc"
   labels = var.labels
 }
 
-resource "google_pubsub_subscription" "scc_sub" {
+resource "google_pubsub_subscription" "scc" {
   name  = "${var.name_prefix}-mcspm-scc-sub"
-  topic = google_pubsub_topic.scc_findings.name
-  ack_deadline_seconds = 30
+  topic = google_pubsub_topic.scc.id
   labels = var.labels
+  dead_letter_policy {
+    dead_letter_topic     = google_pubsub_topic.dlq.id
+    max_delivery_attempts = 10
+  }
+  retry_policy {
+    minimum_backoff = "10s"
+    maximum_backoff = "600s"
+  }
 }
 
-resource "google_scc_source" "custom" {
-  count   = 0 # not creating sources; relying on SCC default sources
-  display_name = "placeholder"
-}
+resource "google_pubsub_topic" "dlq" { name = "${var.name_prefix}-mcspm-dlq" }
 
-resource "google_scc_notification_config" "config" {
-  count       = var.enable_notification ? 1 : 0
+resource "google_scc_notification_config" "scc" {
   provider    = google-beta
-  config_id   = "${var.name_prefix}-mcspm-config"
-  organization = "organizations/1234567890" # to be set by consumer
-  pubsub_topic = google_pubsub_topic.scc_findings.id
-  description  = "Notify SCC findings to Pub/Sub"
+  config_id   = "${var.name_prefix}-mcspm"
+  description = "Forward SCC findings to Pub/Sub"
+  pubsub_topic = google_pubsub_topic.scc.id
+  streaming_config { filter = "state = \"ACTIVE\"" }
+}
+
+resource "google_secret_manager_secret" "hec_token" {
+  secret_id = var.splunk_hec_token_secret
+  replication { automatic = true }
 }
 
 data "archive_file" "function_zip" {
   type        = "zip"
-  source_dir  = "${path.module}/../../../src/gcp_function_forwarder"
-  output_path = "${path.module}/.tmp/gcp_function_forwarder.zip"
+  source_dir  = "${path.module}/../../../src"
+  output_path = "${path.module}/.tmp/mcspm_src.zip"
 }
 
 resource "google_cloudfunctions2_function" "forwarder" {
   name        = "${var.name_prefix}-mcspm-forwarder"
   location    = var.region
+  description = "SCC → Splunk HEC forwarder"
+
   build_config {
     runtime     = "python311"
     entry_point = "pubsub_entrypoint"
     source {
       storage_source {
-        bucket = "placeholder-bucket" # consumer must provide CI/CD deploy, not local
-        object = "gcp_function_forwarder.zip"
+        bucket = google_storage_bucket.code.id
+        object = google_storage_bucket_object.src.name
       }
     }
-  }
-  service_config {
-    available_memory = "256M"
-    timeout_seconds  = 60
     environment_variables = {
-      SPLUNK_HEC_URL    = var.splunk_hec_url
-      SPLUNK_HEC_TOKEN  = "from_gcp_secret_manager_at_runtime"
-      SPLUNK_SOURCETYPE = "mcspm:finding"
-      SPLUNK_SOURCE     = "gcp-scc"
-      SPLUNK_INDEX      = var.splunk_index
+      SPLUNK_HEC_URL = var.splunk_hec_url
+      SPLUNK_INDEX   = var.splunk_index
+      SPLUNK_SOURCE  = "gcp-scc"
     }
   }
-  labels = var.labels
+
+  service_config {
+    available_memory   = "512M"
+    timeout_seconds    = 60
+    environment_variables = {
+      GCP_SECRET_MANAGER_HEC_TOKEN = google_secret_manager_secret.hec_token.id
+    }
+  }
 }
+
+resource "google_storage_bucket" "code" {
+  name                        = "${var.project_id}-${var.name_prefix}-mcspm-code"
+  location                    = var.region
+  uniform_bucket_level_access = true
+}
+
+resource "google_storage_bucket_object" "src" {
+  name   = "src.zip"
+  bucket = google_storage_bucket.code.name
+  source = data.archive_file.function_zip.output_path
+}
+
