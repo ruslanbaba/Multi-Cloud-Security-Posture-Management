@@ -1,0 +1,62 @@
+# Example Terraform variables for staging environment with enhanced security
+# Copy this file to terraform.tfvars and customize for your environment
+
+# Basic Configuration
+name_prefix = "stg"
+aws_region = "us-east-1"
+gcp_project = "your-gcp-project-id"
+gcp_region = "us-central1"
+
+# Splunk Configuration
+splunk_hec_url = "https://your-splunk-instance.com:8088"
+splunk_hec_token_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:stg-mcspm-splunk-hec-token"
+gcp_splunk_hec_token_secret = "stg-mcspm-splunk-hec-token"
+splunk_index = "main"
+
+# Zero Trust Network Configuration (Optional)
+enable_zero_trust_networking = true
+enable_private_endpoints = true
+enable_network_monitoring = true
+
+# VPC Configuration (if using VPC)
+vpc_id = "vpc-12345678"
+vpc_subnet_ids = ["subnet-12345678", "subnet-87654321"]  # Private subnets
+private_subnet_ids = ["subnet-12345678", "subnet-87654321"]
+
+# Zero Trust Egress Rules
+allowed_egress_destinations = [
+  {
+    description = "HTTPS to Splunk HEC"
+    port = 443
+    cidrs = ["10.0.0.0/16"]  # Replace with your Splunk network
+    protocol = "tcp"
+  },
+  {
+    description = "HTTPS to AWS APIs"
+    port = 443
+    cidrs = ["0.0.0.0/0"]  # Consider restricting to AWS IP ranges
+    protocol = "tcp"
+  }
+]
+
+# GCP Zero Trust Configuration
+enable_private_google_access = true
+create_vpc_connector = true
+vpc_network = "projects/your-project/global/networks/your-vpc"
+vpc_connector_ip_range = "10.8.0.0/28"
+allowed_egress_ranges = ["10.0.0.0/16", "172.16.0.0/12"]
+
+# Security Configuration
+create_kms_key = true
+iam_boundary_policy_arn = "arn:aws:iam::123456789012:policy/DeveloperBoundary"
+
+# Enhanced Security Features
+splunk_hec_vpc_endpoint_service = "com.amazonaws.vpce.us-east-1.vpce-svc-12345678"  # If Splunk on AWS
+
+# Tagging
+tags = {
+  Environment = "staging"
+  Project = "mcspm"
+  Owner = "security-team"
+  CostCenter = "security"
+}

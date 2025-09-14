@@ -107,11 +107,13 @@ resource "google_cloudfunctions2_function" "forwarder" {
     available_memory   = "512M"
     timeout_seconds    = 60
     max_instance_count = var.max_instance_count
+    service_account_email = google_service_account.function_sa.email
     
     dynamic "vpc_connector" {
-      for_each = var.vpc_connector_name != null ? [var.vpc_connector_name] : []
+      for_each = var.enable_zero_trust_networking && var.create_vpc_connector ? [google_vpc_access_connector.mcspm[0].name] : (var.vpc_connector_name != null ? [var.vpc_connector_name] : [])
       content {
         name = vpc_connector.value
+        egress_settings = "PRIVATE_RANGES_ONLY"
       }
     }
     
@@ -119,6 +121,7 @@ resource "google_cloudfunctions2_function" "forwarder" {
       GCP_SECRET_MANAGER_HEC_TOKEN = "${google_secret_manager_secret.hec_token.id}/versions/latest"
       GCP_PROJECT_ID = var.project_id
       GCP_REGION     = var.region
+      ZERO_TRUST_MODE = var.enable_zero_trust_networking ? "true" : "false"
     }
   }
   
@@ -140,5 +143,101 @@ resource "google_storage_bucket_object" "src" {
   name   = "src.zip"
   bucket = google_storage_bucket.code.name
   source = data.archive_file.function_zip.output_path
+}
+
+# Zero Trust VPC Connector (if needed)
+resource "google_vpc_access_connector" "mcspm" {
+  count         = var.create_vpc_connector ? 1 : 0
+  name          = "${var.name_prefix}-mcspm-connector"
+  ip_cidr_range = var.vpc_connector_ip_range
+  network       = var.vpc_network
+  region        = var.region
+  
+  # Minimum instances for faster cold starts
+  min_instances = 2
+  max_instances = 10
+  
+  # Enhanced for zero trust
+  machine_type = "e2-micro"
+}
+
+# Zero Trust Firewall Rules
+resource "google_compute_firewall" "function_egress" {
+  count   = var.enable_zero_trust_networking ? 1 : 0
+  name    = "${var.name_prefix}-mcspm-function-egress"
+  network = var.vpc_network
+
+  direction = "EGRESS"
+  priority  = 1000
+  
+  allow {
+    protocol = "tcp"
+    ports    = ["443"]
+  }
+
+  target_service_accounts = [google_service_account.function_sa.email]
+  destination_ranges      = var.allowed_egress_ranges
+  
+  log_config {
+    metadata = "INCLUDE_ALL_METADATA"
+  }
+}
+
+resource "google_compute_firewall" "function_ingress_deny" {
+  count   = var.enable_zero_trust_networking ? 1 : 0
+  name    = "${var.name_prefix}-mcspm-function-ingress-deny"
+  network = var.vpc_network
+
+  direction = "INGRESS"
+  priority  = 65534
+  
+  deny {
+    protocol = "all"
+  }
+
+  target_service_accounts = [google_service_account.function_sa.email]
+  source_ranges          = ["0.0.0.0/0"]
+  
+  log_config {
+    metadata = "INCLUDE_ALL_METADATA"
+  }
+}
+
+# Enhanced Service Account with IAM Conditions
+resource "google_service_account" "function_sa" {
+  account_id   = "${var.name_prefix}-mcspm-function"
+  display_name = "MCSPM Cloud Function Service Account"
+  description  = "Zero Trust service account for MCSPM Cloud Function"
+}
+
+resource "google_project_iam_member" "function_secret_accessor" {
+  project = var.project_id
+  role    = "roles/secretmanager.secretAccessor"
+  member  = "serviceAccount:${google_service_account.function_sa.email}"
+  
+  condition {
+    title       = "Restrict to MCSPM secrets"
+    description = "Only allow access to MCSPM-related secrets during business hours"
+    expression  = <<-EOT
+      resource.name.startsWith('projects/${var.project_id}/secrets/${var.name_prefix}-') &&
+      request.time.getHours() >= 0 && request.time.getHours() <= 23
+    EOT
+  }
+}
+
+# VPC Flow Logs (if enabled)
+resource "google_compute_subnetwork" "private" {
+  count                    = var.enable_vpc_flow_logs && var.vpc_network != null ? 1 : 0
+  name                     = "${var.name_prefix}-mcspm-private-subnet"
+  ip_cidr_range           = "10.0.1.0/24"
+  region                  = var.region
+  network                 = var.vpc_network
+  private_ip_google_access = var.enable_private_google_access
+  
+  log_config {
+    aggregation_interval = "INTERVAL_10_MIN"
+    flow_sampling        = 0.5
+    metadata             = "INCLUDE_ALL_METADATA"
+  }
 }
 

@@ -1,6 +1,6 @@
 # Contributing
 
-We welcome improvements via issues and pull requests. Please adhere to the following:
+I welcome improvements via issues and pull requests. Please adhere to the following:
 
 - Discuss significant changes via an issue before opening a PR.
 - Fork and create feature branches: `feat/...`, `fix/...`, `docs/...`.
