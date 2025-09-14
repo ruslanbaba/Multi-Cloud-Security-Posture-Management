@@ -15,23 +15,31 @@ Enterprise-ready blueprint to aggregate security findings from AWS Security Hub 
 
 ```
 infra/
-	terraform/
-		modules/
-			aws/
-			gcp/
-		envs/
-			staging/
-			prod/
+  terraform/
+    modules/
+      aws/          # AWS Lambda, EventBridge, Security Hub, KMS, VPC support
+      gcp/          # GCP Pub/Sub, SCC, Cloud Functions Gen2, Secret Manager
+    envs/
+      staging/      # Environment-specific compositions
+      prod/
 src/
-	common/
-	aws_lambda_forwarder/
-	gcp_function_forwarder/
-tests/
-.github/workflows/
-docs/
+  common/           # Shared libraries (HEC client, mappings, config)
+  aws_lambda_forwarder/
+  gcp_function_forwarder/
+tests/              # Unit tests with mocked dependencies
+docs/               # Architecture, deployment, VPC, advanced security
+splunk/             # Sample dashboard and saved searches
+.github/workflows/  # CI: lint, test, terraform validate, CodeQL
 ```
 
-See `docs/` for architecture, deployment, and runbooks.
+## Enhanced Features
+
+- **VPC Support**: Optional private networking for Lambda and Cloud Functions
+- **KMS Integration**: Customer-managed keys for encryption at rest and in transit
+- **IAM Boundaries**: Permission boundaries and organization policies
+- **Enhanced Mappings**: Rich CIM-like field mapping with metadata enrichment
+- **Splunk Assets**: Ready-to-use dashboard and saved searches
+- **Security Controls**: Audit logging, compliance frameworks, runtime verificationSee `docs/` for architecture, deployment, and runbooks.
 
 ## Status
 

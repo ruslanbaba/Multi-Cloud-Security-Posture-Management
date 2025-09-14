@@ -1,0 +1,242 @@
+{
+  "version": "1.1",
+  "label": "Multi-Cloud Security Posture Management Dashboard",
+  "description": "Unified view of AWS Security Hub and GCP SCC findings",
+  "definition": {
+    "type": "absolute",
+    "options": {
+      "width": 1440,
+      "height": 960,
+      "margin": [0, 0, 0, 0]
+    },
+    "visualizations": {
+      "viz_1": {
+        "type": "splunk.singlevalue",
+        "title": "Total Active Findings",
+        "dataSources": {
+          "primary": {
+            "type": "ds.search",
+            "options": {
+              "query": "index=main sourcetype=\"mcspm:finding\" record_state=\"ACTIVE\" state=\"ACTIVE\" | stats dc(finding_id) as total_findings",
+              "queryParameters": {
+                "earliest": "-24h@h",
+                "latest": "now"
+              }
+            }
+          }
+        },
+        "options": {
+          "majorValue": "> sparklineValues",
+          "trendValue": "> sparklineValues | delta sparklineValues",
+          "numberPrecision": 0
+        }
+      },
+      "viz_2": {
+        "type": "splunk.pie",
+        "title": "Findings by Provider",
+        "dataSources": {
+          "primary": {
+            "type": "ds.search",
+            "options": {
+              "query": "index=main sourcetype=\"mcspm:finding\" | stats count by provider | eval provider=upper(provider)",
+              "queryParameters": {
+                "earliest": "-24h@h",
+                "latest": "now"
+              }
+            }
+          }
+        },
+        "options": {
+          "labelField": "provider",
+          "measureField": "count"
+        }
+      },
+      "viz_3": {
+        "type": "splunk.column",
+        "title": "Severity Distribution",
+        "dataSources": {
+          "primary": {
+            "type": "ds.search",
+            "options": {
+              "query": "index=main sourcetype=\"mcspm:finding\" | stats count by severity | eval severity_order=case(severity=\"CRITICAL\",4,severity=\"HIGH\",3,severity=\"MEDIUM\",2,severity=\"LOW\",1,1=1,0) | sort severity_order",
+              "queryParameters": {
+                "earliest": "-24h@h",
+                "latest": "now"
+              }
+            }
+          }
+        },
+        "options": {
+          "xField": "severity",
+          "yField": "count",
+          "seriesColors": ["#DC4E41", "#F1813F", "#F8BE34", "#53A051"]
+        }
+      },
+      "viz_4": {
+        "type": "splunk.area",
+        "title": "Findings Trend (24h)",
+        "dataSources": {
+          "primary": {
+            "type": "ds.search",
+            "options": {
+              "query": "index=main sourcetype=\"mcspm:finding\" | bucket _time span=1h | stats count by _time, provider | xyseries _time provider count | fillnull value=0",
+              "queryParameters": {
+                "earliest": "-24h@h",
+                "latest": "now"
+              }
+            }
+          }
+        },
+        "options": {
+          "xField": "_time",
+          "stackMode": "stacked"
+        }
+      },
+      "viz_5": {
+        "type": "splunk.table",
+        "title": "Top 10 Resource Types at Risk",
+        "dataSources": {
+          "primary": {
+            "type": "ds.search",
+            "options": {
+              "query": "index=main sourcetype=\"mcspm:finding\" | stats count as findings, avg(severity_score) as avg_severity by resource_type | eval risk_score=round(count*avg_severity,2) | sort -risk_score | head 10",
+              "queryParameters": {
+                "earliest": "-24h@h",
+                "latest": "now"
+              }
+            }
+          }
+        },
+        "options": {
+          "columns": [
+            {"field": "resource_type", "label": "Resource Type"},
+            {"field": "findings", "label": "Finding Count"},
+            {"field": "avg_severity", "label": "Avg Severity"},
+            {"field": "risk_score", "label": "Risk Score"}
+          ]
+        }
+      },
+      "viz_6": {
+        "type": "splunk.choropleth.svg",
+        "title": "AWS Findings by Region",
+        "dataSources": {
+          "primary": {
+            "type": "ds.search",
+            "options": {
+              "query": "index=main sourcetype=\"mcspm:finding\" provider=\"aws\" region=* | stats count by region | eval region_code=region",
+              "queryParameters": {
+                "earliest": "-24h@h",
+                "latest": "now"
+              }
+            }
+          }
+        },
+        "options": {
+          "svg": "world_countries",
+          "featureIdField": "region_code",
+          "valueField": "count"
+        }
+      },
+      "viz_7": {
+        "type": "splunk.singlevalue",
+        "title": "Critical Findings",
+        "dataSources": {
+          "primary": {
+            "type": "ds.search",
+            "options": {
+              "query": "index=main sourcetype=\"mcspm:finding\" severity=\"CRITICAL\" | stats count",
+              "queryParameters": {
+                "earliest": "-24h@h",
+                "latest": "now"
+              }
+            }
+          }
+        },
+        "options": {
+          "backgroundColor": "#DC4E41",
+          "fontColor": "#FFFFFF",
+          "numberPrecision": 0
+        }
+      },
+      "viz_8": {
+        "type": "splunk.table",
+        "title": "Compliance Status Summary",
+        "dataSources": {
+          "primary": {
+            "type": "ds.search",
+            "options": {
+              "query": "index=main sourcetype=\"mcspm:finding\" compliance=* | stats count by compliance, provider | eval status=case(compliance=\"PASSED\",\"✓ Compliant\",compliance=\"FAILED\",\"✗ Non-Compliant\",1=1,\"⚠ Unknown\")",
+              "queryParameters": {
+                "earliest": "-24h@h",
+                "latest": "now"
+              }
+            }
+          }
+        },
+        "options": {
+          "columns": [
+            {"field": "provider", "label": "Provider"},
+            {"field": "status", "label": "Compliance Status"},
+            {"field": "count", "label": "Count"}
+          ]
+        }
+      },
+      "viz_9": {
+        "type": "splunk.line",
+        "title": "Mean Time to Remediation",
+        "dataSources": {
+          "primary": {
+            "type": "ds.search",
+            "options": {
+              "query": "index=main sourcetype=\"mcspm:finding\" record_state=\"ARCHIVED\" | eval created=strptime(created_at,\"%Y-%m-%dT%H:%M:%S\"), updated=strptime(updated_at,\"%Y-%m-%dT%H:%M:%S\"), remediation_time=(updated-created)/3600 | bucket _time span=1d | stats avg(remediation_time) as avg_hours by _time, provider",
+              "queryParameters": {
+                "earliest": "-7d@d",
+                "latest": "now"
+              }
+            }
+          }
+        },
+        "options": {
+          "xField": "_time",
+          "yField": "avg_hours"
+        }
+      },
+      "viz_10": {
+        "type": "splunk.sankey",
+        "title": "Attack Chain Flow",
+        "dataSources": {
+          "primary": {
+            "type": "ds.search",
+            "options": {
+              "query": "index=main sourcetype=\"mcspm:finding\" types=* | mvexpand types | eval attack_stage=case(match(types,\"Initial Access\"),\"1. Initial Access\",match(types,\"Execution\"),\"2. Execution\",match(types,\"Persistence\"),\"3. Persistence\",match(types,\"Privilege Escalation\"),\"4. Privilege Escalation\",match(types,\"Defense Evasion\"),\"5. Defense Evasion\",match(types,\"Credential Access\"),\"6. Credential Access\",match(types,\"Discovery\"),\"7. Discovery\",match(types,\"Lateral Movement\"),\"8. Lateral Movement\",match(types,\"Collection\"),\"9. Collection\",match(types,\"Exfiltration\"),\"10. Exfiltration\",match(types,\"Impact\"),\"11. Impact\",1=1,\"Other\") | stats count by attack_stage, resource_type | where attack_stage!=\"Other\"",
+              "queryParameters": {
+                "earliest": "-24h@h",
+                "latest": "now"
+              }
+            }
+          }
+        },
+        "options": {
+          "sourceField": "attack_stage",
+          "targetField": "resource_type",
+          "valueField": "count"
+        }
+      }
+    },
+    "layout": {
+      "type": "absolute",
+      "structure": [
+        {"item": "viz_1", "position": {"x": 0, "y": 0, "w": 240, "h": 120}},
+        {"item": "viz_7", "position": {"x": 240, "y": 0, "w": 240, "h": 120}},
+        {"item": "viz_2", "position": {"x": 480, "y": 0, "w": 480, "h": 240}},
+        {"item": "viz_3", "position": {"x": 960, "y": 0, "w": 480, "h": 240}},
+        {"item": "viz_4", "position": {"x": 0, "y": 120, "w": 480, "h": 240}},
+        {"item": "viz_5", "position": {"x": 0, "y": 360, "w": 720, "h": 300}},
+        {"item": "viz_6", "position": {"x": 720, "y": 360, "w": 720, "h": 300}},
+        {"item": "viz_8", "position": {"x": 0, "y": 660, "w": 480, "h": 180}},
+        {"item": "viz_9", "position": {"x": 480, "y": 660, "w": 480, "h": 180}},
+        {"item": "viz_10", "position": {"x": 960, "y": 660, "w": 480, "h": 180}}
+      ]
+    }
+  }
+}

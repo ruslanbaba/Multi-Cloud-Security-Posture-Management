@@ -61,11 +61,14 @@ resource "google_pubsub_subscription" "scc" {
 resource "google_pubsub_topic" "dlq" { name = "${var.name_prefix}-mcspm-dlq" }
 
 resource "google_scc_notification_config" "scc" {
-  provider    = google-beta
-  config_id   = "${var.name_prefix}-mcspm"
-  description = "Forward SCC findings to Pub/Sub"
+  provider     = google-beta
+  config_id    = "${var.name_prefix}-mcspm"
+  description  = "Forward SCC findings to Pub/Sub"
+  organization = var.organization_id != null ? "organizations/${var.organization_id}" : null
   pubsub_topic = google_pubsub_topic.scc.id
-  streaming_config { filter = "state = \"ACTIVE\"" }
+  streaming_config { 
+    filter = "state = \"ACTIVE\" AND (category = \"MALWARE\" OR category = \"PERSISTENCE\" OR category = \"LATERAL_MOVEMENT\" OR category = \"DEFENSE_EVASION\" OR category = \"CREDENTIAL_ACCESS\" OR category = \"DISCOVERY\" OR category = \"EXECUTION\" OR category = \"EXFILTRATION\" OR category = \"IMPACT\" OR category = \"INITIAL_ACCESS\" OR category = \"PRIVILEGE_ESCALATION\" OR severity = \"HIGH\" OR severity = \"CRITICAL\")"
+  }
 }
 
 resource "google_secret_manager_secret" "hec_token" {
@@ -103,9 +106,27 @@ resource "google_cloudfunctions2_function" "forwarder" {
   service_config {
     available_memory   = "512M"
     timeout_seconds    = 60
-    environment_variables = {
-      GCP_SECRET_MANAGER_HEC_TOKEN = google_secret_manager_secret.hec_token.id
+    max_instance_count = var.max_instance_count
+    
+    dynamic "vpc_connector" {
+      for_each = var.vpc_connector_name != null ? [var.vpc_connector_name] : []
+      content {
+        name = vpc_connector.value
+      }
     }
+    
+    environment_variables = {
+      GCP_SECRET_MANAGER_HEC_TOKEN = "${google_secret_manager_secret.hec_token.id}/versions/latest"
+      GCP_PROJECT_ID = var.project_id
+      GCP_REGION     = var.region
+    }
+  }
+  
+  event_trigger {
+    trigger_region = var.region
+    event_type     = "google.cloud.pubsub.topic.v1.messagePublished"
+    pubsub_topic   = google_pubsub_topic.scc.id
+    retry_policy   = "RETRY_POLICY_RETRY"
   }
 }
 
